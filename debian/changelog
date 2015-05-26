@@ -1,0 +1,21 @@
+lastpass-cli (0.5.0-1) unstable; urgency=medium
+
+  * Include new SHA-256 CA certificate
+  * Add basic regex search functionality
+  * Fix hang in pinentry prompt
+
+ -- Troy Heber <troyh@debian.org>  Tue, 26 May 2015 07:13:36 -0600
+
+lastpass-cli (0.3.0-2) unstable; urgency=medium
+
+  * Update copyright file to machine readable format and include the ISC
+    license from util.c
+
+ -- Troy Heber <troyh@debian.org>  Sun, 26 Oct 2014 11:17:58 -0600
+
+lastpass-cli (0.3.0-1) unstable; urgency=low
+
+  * Initial Release (Closes: #766497)
+
+ -- Troy Heber <troyh@debian.org>  Thu, 23 Oct 2014 09:05:14 -0600
+

@@ -1,0 +1,12 @@
+diff -urpN ori/Makefile new/Makefile
+--- ori/Makefile	2015-05-19 14:14:44.000000000 -0600
++++ new/Makefile	2015-05-26 07:27:08.681141846 -0600
+@@ -22,7 +22,7 @@ LDLIBS += -lkvm
+ endif
+ endif
+ 
+-all: lpass
++all: lpass doc-man
+ doc-man: lpass.1
+ doc-html: lpass.1.html
+ doc: doc-man doc-html

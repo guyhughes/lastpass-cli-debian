@@ -1,0 +1,11 @@
+#!/usr/bin/make -f
+
+# Uncomment this to turn on verbose mode.
+#export DH_VERBOSE=1
+export DEB_BUILD_HARDENING=1
+export DEB_BUILD_MAINT_OPTIONS=hardening=+all,
+export DEB_CFLAGS_MAINT_APPEND  = -Wall -fno-aggressive-loop-optimizations
+include /usr/share/dpkg/buildflags.mk
+
+%:
+	dh $@
