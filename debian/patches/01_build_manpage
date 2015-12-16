@@ -1,0 +1,21 @@
+From: Troy Heber <troyh@debian.org>
+Date: Wed, 16 Dec 2015 17:08:58 -0500
+Subject: _build_manpage
+
+---
+ Makefile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Makefile b/Makefile
+index 817755a..d04fa25 100644
+--- a/Makefile
++++ b/Makefile
+@@ -22,7 +22,7 @@ LDLIBS += -lkvm
+ endif
+ endif
+ 
+-all: lpass
++all: lpass doc-man
+ doc-man: lpass.1
+ doc-html: lpass.1.html
+ doc: doc-man doc-html
