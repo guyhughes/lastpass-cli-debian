@@ -22,7 +22,7 @@ LDLIBS += -lkvm
 endif
 endif
 
-all: lpass
+all: lpass doc-man
 doc-man: lpass.1
 doc-html: lpass.1.html
 doc: doc-man doc-html
