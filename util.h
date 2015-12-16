@@ -94,8 +94,8 @@ bool ends_with(const char *str, const char *end);
 
 char *trim(char *str);
 
-void bytes_to_hex(const char *bytes, char **hex, size_t len);
-int hex_to_bytes(const char *hex, char **bytes);
+void bytes_to_hex(const unsigned char *bytes, char **hex, size_t len);
+int hex_to_bytes(const char *hex, unsigned char **bytes);
 
 void secure_clear(void *ptr, size_t len);
 void secure_clear_str(char *str);
@@ -103,5 +103,7 @@ void *secure_resize(void *ptr, size_t oldlen, size_t newlen);
 
 /* [min, max) */
 unsigned long range_rand(unsigned long min, unsigned long max);
+void get_random_bytes(unsigned char *buf, size_t len);
 
+const char *bool_str(bool val);
 #endif

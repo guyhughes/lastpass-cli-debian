@@ -1,9 +1,38 @@
 /*
- * Copyright (c) 2014 LastPass.
+ * configuration file handling
  *
+ * Copyright (C) 2014-2015 LastPass.
  *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * In addition, as a special exception, the copyright holders give
+ * permission to link the code of portions of this program with the
+ * OpenSSL library under certain conditions as described in each
+ * individual source file, and distribute linked combinations
+ * including the two.
+ *
+ * You must obey the GNU General Public License in all respects
+ * for all of the code used other than OpenSSL.  If you modify
+ * file(s) with this exception, you may extend this exception to your
+ * version of the file(s), but you are not obligated to do so.  If you
+ * do not wish to do so, delete this exception statement from your
+ * version.  If you delete this exception statement from all source
+ * files in the program, then also delete it here.
+ *
+ * See LICENSE.OpenSSL for more details regarding this exception.
  */
-
 #include "config.h"
 #include "util.h"
 #include <stdlib.h>
@@ -131,7 +160,7 @@ error:
 char *config_read_string(const char *name)
 {
 	_cleanup_free_ char *buffer = NULL;
-	size_t len = config_read_buffer(name, &buffer);
+	size_t len = config_read_buffer(name, (unsigned char **) &buffer);
 
 	if (!buffer)
 		return NULL;
@@ -139,10 +168,10 @@ char *config_read_string(const char *name)
 	return xstrndup(buffer, len);
 }
 
-size_t config_read_buffer(const char *name, char **out)
+size_t config_read_buffer(const char *name, unsigned char **out)
 {
 	_cleanup_fclose_ FILE *file = NULL;
-	char *buffer;
+	unsigned char *buffer;
 	size_t len, read;
 
 	file = config_fopen(name, "r");
@@ -214,10 +243,10 @@ error:
 
 }
 
-static size_t decrypt_buffer(const char *buffer, size_t in_len, unsigned const char key[KDF_HASH_LEN], char **out)
+static size_t decrypt_buffer(const unsigned char *buffer, size_t in_len, unsigned const char key[KDF_HASH_LEN], unsigned char **out)
 {
 	EVP_CIPHER_CTX ctx;
-	char *plaintext = NULL;
+	unsigned char *plaintext = NULL;
 	int out_len;
 	unsigned int hmac_len;
 	size_t len;
@@ -269,7 +298,7 @@ void config_write_encrypted_buffer(const char *name, const char *buffer, size_t 
 char *config_read_encrypted_string(const char *name, unsigned const char key[KDF_HASH_LEN])
 {
 	_cleanup_free_ char *buffer = NULL;
-	size_t len = config_read_encrypted_buffer(name, &buffer, key);
+	size_t len = config_read_encrypted_buffer(name, (unsigned char **) &buffer, key);
 
 	if (!buffer)
 		return NULL;
@@ -277,9 +306,9 @@ char *config_read_encrypted_string(const char *name, unsigned const char key[KDF
 	return xstrndup(buffer, len);
 }
 
-size_t config_read_encrypted_buffer(const char *name, char **buffer, unsigned const char key[KDF_HASH_LEN])
+size_t config_read_encrypted_buffer(const char *name, unsigned char **buffer, unsigned const char key[KDF_HASH_LEN])
 {
-	_cleanup_free_ char *encrypted_buffer = NULL;
+	_cleanup_free_ unsigned char *encrypted_buffer = NULL;
 	size_t len;
 
 	len = config_read_buffer(name, &encrypted_buffer);

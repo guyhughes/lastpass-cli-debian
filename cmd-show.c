@@ -1,9 +1,38 @@
 /*
- * Copyright (c) 2014 LastPass.
+ * command to show the contents of a vault entry
  *
+ * Copyright (C) 2014-2015 LastPass.
  *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * In addition, as a special exception, the copyright holders give
+ * permission to link the code of portions of this program with the
+ * OpenSSL library under certain conditions as described in each
+ * individual source file, and distribute linked combinations
+ * including the two.
+ *
+ * You must obey the GNU General Public License in all respects
+ * for all of the code used other than OpenSSL.  If you modify
+ * file(s) with this exception, you may extend this exception to your
+ * version of the file(s), but you are not obligated to do so.  If you
+ * do not wish to do so, delete this exception statement from your
+ * version.  If you delete this exception statement from all source
+ * files in the program, then also delete it here.
+ *
+ * See LICENSE.OpenSSL for more details regarding this exception.
  */
-
 #include "cmd.h"
 #include "util.h"
 #include "config.h"
@@ -67,13 +96,14 @@ int cmd_show(int argc, char **argv)
 	enum { ALL, USERNAME, PASSWORD, URL, FIELD, ID, NAME, NOTES } choice = ALL;
 	_cleanup_free_ char *field = NULL;
 	struct account *notes_expansion = NULL;
+	struct field *found_field;
 	char *name, *pretty_field;
 	struct account *found, *last_found;
 	enum blobsync sync = BLOB_SYNC_AUTO;
 	bool clip = false;
 	struct list_head matches;
 	enum search_type search = SEARCH_EXACT_MATCH;
-	int fields = ACCOUNT_NAME;
+	int fields = ACCOUNT_NAME | ACCOUNT_ID;
 
 	while ((option = getopt_long(argc, argv, "cupFG", long_options, &option_index)) != -1) {
 		switch (option) {
@@ -172,7 +202,7 @@ int cmd_show(int argc, char **argv)
 
 	if (choice == FIELD) {
 		struct field *found_field;
-		for (found_field = found->field_head; found_field; found_field = found_field->next) {
+		list_for_each_entry(found_field, &found->field_head, list) {
 			if (!strcmp(found_field->name, field))
 				break;
 		}
@@ -204,7 +234,8 @@ int cmd_show(int argc, char **argv)
 			terminal_printf(TERMINAL_FG_YELLOW "%s" TERMINAL_RESET ": %s\n", "Password", found->password);
 		if (strlen(found->url) && strcmp(found->url, "http://"))
 			terminal_printf(TERMINAL_FG_YELLOW "%s" TERMINAL_RESET ": %s\n", "URL", found->url);
-		for (struct field *found_field = found->field_head; found_field; found_field = found_field->next) {
+
+		list_for_each_entry(found_field, &found->field_head, list) {
 			pretty_field = pretty_field_value(found_field);
 			terminal_printf(TERMINAL_FG_YELLOW "%s" TERMINAL_RESET ": %s\n", found_field->name, pretty_field);
 			free(pretty_field);

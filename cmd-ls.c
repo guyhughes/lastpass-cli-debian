@@ -1,9 +1,38 @@
 /*
- * Copyright (c) 2014 LastPass.
+ * command for listing the vault
  *
+ * Copyright (C) 2014-2015 LastPass.
  *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * In addition, as a special exception, the copyright holders give
+ * permission to link the code of portions of this program with the
+ * OpenSSL library under certain conditions as described in each
+ * individual source file, and distribute linked combinations
+ * including the two.
+ *
+ * You must obey the GNU General Public License in all respects
+ * for all of the code used other than OpenSSL.  If you modify
+ * file(s) with this exception, you may extend this exception to your
+ * version of the file(s), but you are not obligated to do so.  If you
+ * do not wish to do so, delete this exception statement from your
+ * version.  If you delete this exception statement from all source
+ * files in the program, then also delete it here.
+ *
+ * See LICENSE.OpenSSL for more details regarding this exception.
  */
-
 #include "cmd.h"
 #include "util.h"
 #include "config.h"
@@ -13,6 +42,10 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
+#include <time.h>
+
+static bool long_listing = false;
+static bool show_mtime = true;
 
 struct node {
 	char *name;
@@ -22,6 +55,26 @@ struct node {
 	struct node *first_child;
 	struct node *next_sibling;
 };
+
+static char *format_timestamp(char *timestamp, bool utc)
+{
+	char temp[60];
+	struct tm *ts_tm;
+
+	time_t ts_time_t = (time_t) strtoul(timestamp, NULL, 10);
+
+	if (ts_time_t == 0)
+		return xstrdup("");
+
+	if (utc)
+		ts_tm = gmtime(&ts_time_t);
+	else
+		ts_tm = localtime(&ts_time_t);
+
+	strftime(temp, sizeof(temp), "%Y-%m-%d %H:%M", ts_tm);
+
+	return xstrdup(temp);
+}
 
 static void insert_node(struct node *head, const char *path, struct account *account)
 {
@@ -76,8 +129,15 @@ static void print_node(struct node *head, int level)
 		if (node->name) {
 			for (int i = 0; i < level; ++i)
 				printf("    ");
-			if (node->account)
+			if (node->account) {
+				if (long_listing) {
+					_cleanup_free_ char *timestr = show_mtime ?
+						format_timestamp(node->account->last_modified_gmt, true) :
+						format_timestamp(node->account->last_touch, false);
+					terminal_printf(TERMINAL_FG_CYAN "%s ", timestr);
+				}
 				terminal_printf(TERMINAL_FG_GREEN TERMINAL_BOLD "%s" TERMINAL_NO_BOLD " [id: %s]" TERMINAL_RESET "\n", node->name, node->account->id);
+			}
 			else if (node->shared)
 				terminal_printf(TERMINAL_FG_CYAN TERMINAL_BOLD "%s" TERMINAL_RESET "\n", node->name);
 			else
@@ -90,15 +150,12 @@ static void print_node(struct node *head, int level)
 static char *get_display_fullname(struct account *account)
 {
 	char *fullname = NULL;
-	if (strcmp(account->group, ""))
+
+	if (account->share || strcmp(account->group, ""))
 		fullname = xstrdup(account->fullname);
 	else
 		xasprintf(&fullname, "(none)/%s", account->fullname);
 
-	if (account->share) {
-		free(fullname);
-		xasprintf(&fullname, "%s/%s", account->share->name, account->fullname);
-	}
 	return fullname;
 }
 
@@ -110,6 +167,7 @@ int cmd_ls(int argc, char **argv)
 	static struct option long_options[] = {
 		{"sync", required_argument, NULL, 'S'},
 		{"color", required_argument, NULL, 'C'},
+		{"long", no_argument, NULL, 'l'},
 		{0, 0, 0, 0}
 	};
 	int option;
@@ -122,14 +180,24 @@ int cmd_ls(int argc, char **argv)
 	enum blobsync sync = BLOB_SYNC_AUTO;
 	enum color_mode cmode = COLOR_MODE_AUTO;
 	bool print_tree;
+	struct account *account;
 
-	while ((option = getopt_long(argc, argv, "", long_options, &option_index)) != -1) {
+	while ((option = getopt_long(argc, argv, "lmu", long_options, &option_index)) != -1) {
 		switch (option) {
 			case 'S':
 				sync = parse_sync_string(optarg);
 				break;
 			case 'C':
 				cmode = parse_color_mode_string(optarg);
+				break;
+			case 'l':
+				long_listing = true;
+				break;
+			case 'm':
+				show_mtime = true;
+				break;
+			case 'u':
+				show_mtime = false;
 				break;
 			case '?':
 			default:
@@ -159,10 +227,10 @@ int cmd_ls(int argc, char **argv)
 	if (group && !strcmp(group, "(none)"))
 		group = "";
 
-	for (struct account *account = blob->account_head; account; account = account->next) {
+	list_for_each_entry(account, &blob->account_head, list) {
 		if (group) {
-			sub = strstr(account->group, group);
-			if (!sub || sub != account->group)
+			sub = strstr(account->fullname, group);
+			if (!sub || sub != account->fullname)
 				continue;
 			group_len = strlen(group);
 			sub += group_len;
@@ -174,8 +242,15 @@ int cmd_ls(int argc, char **argv)
 
 		if (print_tree)
 			insert_node(root, fullname, account);
-		else
+		else {
+			if (long_listing) {
+				_cleanup_free_ char *timestr = show_mtime ?
+					format_timestamp(account->last_modified_gmt, true) :
+					format_timestamp(account->last_touch, false);
+				printf("%s ", timestr);
+			}
 			printf("%s [id: %s]\n", fullname, account->id);
+		}
 
 		free(fullname);
 	}

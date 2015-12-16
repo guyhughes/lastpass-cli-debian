@@ -1,9 +1,38 @@
 /*
-* Copyright (c) 2014 LastPass.
-*
-*
-*/
-
+ * command for exporting vault entries into CSV format
+ *
+ * Copyright (C) 2014-2015 LastPass.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * In addition, as a special exception, the copyright holders give
+ * permission to link the code of portions of this program with the
+ * OpenSSL library under certain conditions as described in each
+ * individual source file, and distribute linked combinations
+ * including the two.
+ *
+ * You must obey the GNU General Public License in all respects
+ * for all of the code used other than OpenSSL.  If you modify
+ * file(s) with this exception, you may extend this exception to your
+ * version of the file(s), but you are not obligated to do so.  If you
+ * do not wish to do so, delete this exception statement from your
+ * version.  If you delete this exception statement from all source
+ * files in the program, then also delete it here.
+ *
+ * See LICENSE.OpenSSL for more details regarding this exception.
+ */
 #include "cmd.h"
 #include "util.h"
 #include "config.h"
@@ -18,7 +47,7 @@
 #include <string.h>
 
 
-void print_csv_cell(char *cell, bool is_last)
+static void print_csv_cell(char *cell, bool is_last)
 {
 	char *ptr;
 	bool needs_quote = false;
@@ -59,6 +88,8 @@ int cmd_export(int argc, char **argv)
 	int option;
 	int option_index;
 	enum blobsync sync = BLOB_SYNC_AUTO;
+	struct account *account;
+
 	while ((option = getopt_long(argc, argv, "c", long_options, &option_index)) != -1) {
 		switch (option) {
 			case 'S':
@@ -80,7 +111,7 @@ int cmd_export(int argc, char **argv)
 	init_all(sync, key, &session, &blob);
 
 	/* reprompt once if any one account is password protected */
-	for (struct account *account = blob->account_head; account; account = account->next) {
+	list_for_each_entry(account, &blob->account_head, list) {
 		if (account->pwprotect) {
 			unsigned char pwprotect_key[KDF_HASH_LEN];
 			if (!agent_load_key(pwprotect_key))
@@ -92,7 +123,7 @@ int cmd_export(int argc, char **argv)
 	}
 
 	printf("url,username,password,hostname,name,grouping\r\n");
-	for (struct account *account = blob->account_head; account; account = account->next) {
+	list_for_each_entry(account, &blob->account_head, list) {
 
 		/* skip shared notes */
 		if (!strcmp(account->url, "http://sn"))

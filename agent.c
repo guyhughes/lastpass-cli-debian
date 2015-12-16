@@ -1,7 +1,37 @@
 /*
- * Copyright (c) 2014 LastPass.
+ * agent for caching decryption key
  *
+ * Copyright (C) 2014-2015 LastPass.
  *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * In addition, as a special exception, the copyright holders give
+ * permission to link the code of portions of this program with the
+ * OpenSSL library under certain conditions as described in each
+ * individual source file, and distribute linked combinations
+ * including the two.
+ *
+ * You must obey the GNU General Public License in all respects
+ * for all of the code used other than OpenSSL.  If you modify
+ * file(s) with this exception, you may extend this exception to your
+ * version of the file(s), but you are not obligated to do so.  If you
+ * do not wish to do so, delete this exception statement from your
+ * version.  If you delete this exception statement from all source
+ * files in the program, then also delete it here.
+ *
+ * See LICENSE.OpenSSL for more details regarding this exception.
  */
 
 #include "agent.h"
@@ -103,7 +133,6 @@ static int agent_socket_get_cred(int fd, struct ucred *cred)
 
 static void agent_run(unsigned const char key[KDF_HASH_LEN])
 {
-	_cleanup_free_ char *path;
 	char *agent_timeout_str;
 	unsigned int agent_timeout;
 	struct sockaddr_un sa, listensa;
@@ -123,7 +152,7 @@ static void agent_run(unsigned const char key[KDF_HASH_LEN])
 	if (agent_timeout)
 		alarm(agent_timeout);
 
-	path = agent_socket_path();
+	_cleanup_free_ char *path = agent_socket_path();
 	if (strlen(path) >= sizeof(sa.sun_path))
 		die("Path too large for agent control socket.");
 
@@ -170,12 +199,11 @@ static void agent_run(unsigned const char key[KDF_HASH_LEN])
 
 void agent_kill(void)
 {
-	_cleanup_free_ char *path;
 	struct sockaddr_un sa;
 	struct ucred cred;
 	int fd;
 
-	path = agent_socket_path();
+	_cleanup_free_ char *path = agent_socket_path();
 	if (strlen(path) >= sizeof(sa.sun_path))
 		die("Path too large for agent control socket.");
 
@@ -205,12 +233,11 @@ out:
 
 static bool agent_ask(unsigned char key[KDF_HASH_LEN])
 {
-	_cleanup_free_ char *path;
 	struct sockaddr_un sa;
 	int fd;
 	bool ret = false;
 
-	path = agent_socket_path();
+	_cleanup_free_ char *path = agent_socket_path();
 	if (strlen(path) >= sizeof(sa.sun_path))
 		die("Path too large for agent control socket.");
 
@@ -279,7 +306,7 @@ bool agent_get_decryption_key(unsigned char key[KDF_HASH_LEN])
 	char *disable_str;
 
 	if (config_exists("plaintext_key")) {
-		_cleanup_free_ char *key_buffer = NULL;
+		_cleanup_free_ unsigned char *key_buffer = NULL;
 		if (config_read_buffer("plaintext_key", &key_buffer) == KDF_HASH_LEN) {
 			_cleanup_free_ char *verify = config_read_encrypted_string("verify", (unsigned char *)key_buffer);
 			if (!verify || strcmp(verify, AGENT_VERIFICATION_STRING))

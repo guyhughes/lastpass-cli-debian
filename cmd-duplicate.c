@@ -1,9 +1,38 @@
 /*
- * Copyright (c) 2014 LastPass.
+ * command for making copies of vault entries
  *
+ * Copyright (C) 2014-2015 LastPass.
  *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * In addition, as a special exception, the copyright holders give
+ * permission to link the code of portions of this program with the
+ * OpenSSL library under certain conditions as described in each
+ * individual source file, and distribute linked combinations
+ * including the two.
+ *
+ * You must obey the GNU General Public License in all respects
+ * for all of the code used other than OpenSSL.  If you modify
+ * file(s) with this exception, you may extend this exception to your
+ * version of the file(s), but you are not obligated to do so.  If you
+ * do not wish to do so, delete this exception statement from your
+ * version.  If you delete this exception statement from all source
+ * files in the program, then also delete it here.
+ *
+ * See LICENSE.OpenSSL for more details regarding this exception.
  */
-
 #include "cmd.h"
 #include "util.h"
 #include "config.h"
@@ -30,7 +59,7 @@ int cmd_duplicate(int argc, char **argv)
 	char *name;
 	enum blobsync sync = BLOB_SYNC_AUTO;
 	struct account *found, *new;
-	struct field **last_field;
+	struct field *field, *copy_field;
 
 	while ((option = getopt_long(argc, argv, "", long_options, &option_index)) != -1) {
 		switch (option) {
@@ -57,8 +86,8 @@ int cmd_duplicate(int argc, char **argv)
 	if (!found)
 		die("Could not find specified account '%s'.", name);
 
-	new = new0(struct account, 1);
-	share_assign(found->share, &new->share);
+	new = new_account();
+	new->share = found->share;
 	new->id = xstrdup("0");
 	account_set_name(new, xstrdup(found->name), key);
 	account_set_group(new, xstrdup(found->group), key);
@@ -68,18 +97,17 @@ int cmd_duplicate(int argc, char **argv)
 	new->fullname = xstrdup(found->fullname);
 	new->url = xstrdup(found->url);
 	new->pwprotect = found->pwprotect;
-	last_field = &new->field_head;
-	for (struct field *field = found->field_head; field; field = field->next) {
-		*last_field = new0(struct field, 1);
-		(*last_field)->type = xstrdup(field->type);
-		(*last_field)->name = xstrdup(field->name);
-		field_set_value(found, *last_field, xstrdup(field->value), key);
-		(*last_field)->checked = field->checked;
-		last_field = &((*last_field)->next);
+
+	list_for_each_entry(field, &found->field_head, list) {
+		copy_field = new0(struct field, 1);
+		copy_field->type = xstrdup(field->type);
+		copy_field->name = xstrdup(field->name);
+		field_set_value(found, copy_field, xstrdup(field->value), key);
+		copy_field->checked = field->checked;
+		list_add_tail(&copy_field->list, &new->field_head);
 	}
 
-	new->next = blob->account_head;
-	blob->account_head = new;
+	list_add(&new->list, &blob->account_head);
 
 	lastpass_update_account(sync, key, session, new, blob);
 	blob_save(blob, key);
