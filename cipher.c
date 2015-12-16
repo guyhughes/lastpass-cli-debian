@@ -1,9 +1,38 @@
 /*
- * Copyright (c) 2014 LastPass.
+ * encryption and decryption routines
  *
+ * Copyright (C) 2014-2015 LastPass.
  *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * In addition, as a special exception, the copyright holders give
+ * permission to link the code of portions of this program with the
+ * OpenSSL library under certain conditions as described in each
+ * individual source file, and distribute linked combinations
+ * including the two.
+ *
+ * You must obey the GNU General Public License in all respects
+ * for all of the code used other than OpenSSL.  If you modify
+ * file(s) with this exception, you may extend this exception to your
+ * version of the file(s), but you are not obligated to do so.  If you
+ * do not wish to do so, delete this exception statement from your
+ * version.  If you delete this exception statement from all source
+ * files in the program, then also delete it here.
+ *
+ * See LICENSE.OpenSSL for more details regarding this exception.
  */
-
 #include "cipher.h"
 #include "util.h"
 #include <openssl/evp.h>
@@ -16,7 +45,7 @@
 #include <string.h>
 #include <openssl/err.h>
 
-char *cipher_rsa_decrypt(const char *ciphertext, size_t len, const struct private_key *private_key)
+char *cipher_rsa_decrypt(const unsigned char *ciphertext, size_t len, const struct private_key *private_key)
 {
 	PKCS8_PRIV_KEY_INFO *p8inf = NULL;
 	EVP_PKEY *pkey = NULL;
@@ -58,7 +87,51 @@ out:
 	return ret;
 }
 
-char *cipher_aes_decrypt(const char *ciphertext, size_t len, const unsigned char key[KDF_HASH_LEN])
+int cipher_rsa_encrypt(const char *plaintext,
+		       const struct public_key *public_key,
+		       unsigned char *out_crypttext, size_t *out_len)
+{
+	EVP_PKEY *pubkey = NULL;
+	RSA *rsa = NULL;
+	BIO *memory = NULL;
+	int ret;
+
+	if (*out_len < public_key->len) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	memory = BIO_new(BIO_s_mem());
+	ret = BIO_write(memory, public_key->key, public_key->len);
+	if (ret < 0)
+		goto out;
+
+	ret = -EIO;
+	pubkey = d2i_PUBKEY_bio(memory, NULL);
+	if (!pubkey)
+		goto out;
+
+	rsa = EVP_PKEY_get1_RSA(pubkey);
+	if (!rsa)
+		goto out;
+
+	ret = RSA_public_encrypt(strlen(plaintext), (unsigned char *) plaintext,
+			         (unsigned char *) out_crypttext,
+			         rsa, RSA_PKCS1_OAEP_PADDING);
+	if (ret < 0)
+		goto out;
+
+	*out_len = ret;
+	ret = 0;
+
+out:
+	EVP_PKEY_free(pubkey);
+	RSA_free(rsa);
+	BIO_free_all(memory);
+	return ret;
+}
+
+char *cipher_aes_decrypt(const unsigned char *ciphertext, size_t len, const unsigned char key[KDF_HASH_LEN])
 {
 	EVP_CIPHER_CTX ctx;
 	char *plaintext;
@@ -179,11 +252,11 @@ char *cipher_base64(const char *bytes, size_t len)
 	return base64(bytes, len);
 }
 
-static size_t unbase64(const char *bytes, char **unbase64)
+static size_t unbase64(const char *bytes, unsigned char **unbase64)
 {
 	size_t len;
 	BIO *memory, *b64;
-	char *buffer;
+	unsigned char *buffer;
 
 	len = strlen(bytes);
 	if (!len)
@@ -213,9 +286,9 @@ error:
 char *cipher_aes_decrypt_base64(const char *ciphertext, const unsigned char key[KDF_HASH_LEN])
 {
 	_cleanup_free_ char *copy = NULL;
-	_cleanup_free_ char *iv = NULL;
-	_cleanup_free_ char *data = NULL;
-	_cleanup_free_ char *unbase64_ciphertext = NULL;
+	_cleanup_free_ unsigned char *iv = NULL;
+	_cleanup_free_ unsigned char *data = NULL;
+	_cleanup_free_ unsigned char *unbase64_ciphertext = NULL;
 	char *pipe;
 	size_t iv_len, data_len, len;
 
@@ -240,4 +313,21 @@ char *cipher_aes_decrypt_base64(const char *ciphertext, const unsigned char key[
 		len = unbase64(ciphertext, &data);
 		return cipher_aes_decrypt(data, len, key);
 	}
+}
+
+char *encrypt_and_base64(const char *str, unsigned const char key[KDF_HASH_LEN])
+{
+	char *intermediate = NULL;
+	char *base64 = NULL;
+	size_t len;
+
+	base64 = trim(xstrdup(str));
+	if (!*base64)
+		return base64;
+
+	len = cipher_aes_encrypt(base64, key, &intermediate);
+	free(base64);
+	base64 = cipher_base64(intermediate, len);
+	free(intermediate);
+	return base64;
 }

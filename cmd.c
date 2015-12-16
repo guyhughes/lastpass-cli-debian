@@ -1,5 +1,37 @@
 /*
- * Copyright (c) 2014-2015 LastPass.
+ * general utility functions used by multiple commands
+ *
+ * Copyright (C) 2014-2015 LastPass.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * In addition, as a special exception, the copyright holders give
+ * permission to link the code of portions of this program with the
+ * OpenSSL library under certain conditions as described in each
+ * individual source file, and distribute linked combinations
+ * including the two.
+ *
+ * You must obey the GNU General Public License in all respects
+ * for all of the code used other than OpenSSL.  If you modify
+ * file(s) with this exception, you may extend this exception to your
+ * version of the file(s), but you are not obligated to do so.  If you
+ * do not wish to do so, delete this exception statement from your
+ * version.  If you delete this exception statement from all source
+ * files in the program, then also delete it here.
+ *
+ * See LICENSE.OpenSSL for more details regarding this exception.
  */
 #include "cmd.h"
 #include "agent.h"
@@ -33,6 +65,11 @@ enum color_mode parse_color_mode_string(const char *colormode)
 		return COLOR_MODE_ALWAYS;
 	else
 		die_usage("... --color=auto|never|always");
+}
+
+bool parse_bool_arg_string(const char *extra)
+{
+	return !extra || strcmp(extra, "true") == 0;
 }
 
 void init_all(enum blobsync sync, unsigned char key[KDF_HASH_LEN], struct session **session, struct blob **blob)
@@ -73,8 +110,8 @@ static void search_accounts(struct blob *blob,
 			    int fields,
 			    struct list_head *ret_list)
 {
-	for (struct account *account = blob->account_head; account;
-	     account = account->next) {
+	struct account *account;
+	list_for_each_entry(account, &blob->account_head, list) {
 		if (((fields & ACCOUNT_ID) && cmp(account->id, needle) == 0) ||
 		    ((fields & ACCOUNT_NAME) && cmp(account->name, needle) == 0) ||
 		    ((fields & ACCOUNT_FULLNAME) && cmp(account->fullname, needle) == 0) ||
@@ -126,7 +163,8 @@ void find_matching_accounts(struct blob *blob, const char *name,
 			    struct list_head *ret_list)
 {
 	/* look for exact id match */
-	for (struct account *account = blob->account_head; account; account = account->next) {
+	struct account *account;
+	list_for_each_entry(account, &blob->account_head, list) {
 		if (strcmp(name, "0") && !strcasecmp(account->id, name)) {
 			list_add_tail(&account->match_list, ret_list);
 			/* if id match, stop processing */

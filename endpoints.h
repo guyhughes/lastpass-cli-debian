@@ -15,4 +15,10 @@ void lastpass_remove_account(enum blobsync sync, unsigned const char key[KDF_HAS
 void lastpass_update_account(enum blobsync sync, unsigned const char key[KDF_HASH_LEN], const struct session *session, const struct account *account, struct blob *blob);
 void lastpass_log_access(enum blobsync sync, const struct session *session, unsigned const char key[KDF_HASH_LEN], const struct account *account);
 
+int lastpass_share_getinfo(const struct session *session, const char *shareid, struct list_head *users);
+int lastpass_share_user_add(const struct session *session, struct share *share, struct share_user *user);
+int lastpass_share_user_del(const struct session *session, const char *shareid, struct share_user *user);
+int lastpass_share_user_mod(const struct session *session, struct share *share, struct share_user *user);
+int lastpass_share_create(const struct session *session, const char *sharename);
+int lastpass_share_delete(const struct session *session, struct share *share);
 #endif

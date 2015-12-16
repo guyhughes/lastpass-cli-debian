@@ -1,9 +1,38 @@
 /*
- * Copyright (c) 2014 LastPass.
+ * queue for changes uploaded to LastPass
  *
+ * Copyright (C) 2014-2015 LastPass.
  *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * In addition, as a special exception, the copyright holders give
+ * permission to link the code of portions of this program with the
+ * OpenSSL library under certain conditions as described in each
+ * individual source file, and distribute linked combinations
+ * including the two.
+ *
+ * You must obey the GNU General Public License in all respects
+ * for all of the code used other than OpenSSL.  If you modify
+ * file(s) with this exception, you may extend this exception to your
+ * version of the file(s), but you are not obligated to do so.  If you
+ * do not wish to do so, delete this exception statement from your
+ * version.  If you delete this exception statement from all source
+ * files in the program, then also delete it here.
+ *
+ * See LICENSE.OpenSSL for more details regarding this exception.
  */
-
 #include "password.h"
 #include "util.h"
 #include "terminal.h"
@@ -17,6 +46,61 @@
 #include <stdarg.h>
 #include <errno.h>
 #include <termios.h>
+
+static char *password_prompt_askpass(const char *askpass, const char *prompt, const char *error, const char *descfmt, va_list params)
+{
+	int status;
+	int write_fds[2], read_fds[2];
+	pid_t child;
+	FILE *output;
+	char *password = NULL, *lastlf;
+	size_t len;
+	UNUSED(error);
+	UNUSED(descfmt);
+	UNUSED(params);
+
+	if (pipe(write_fds) < 0 || pipe(read_fds) < 0)
+		die_errno("pipe");
+
+	child = fork();
+	if (child == -1)
+		die_errno("fork");
+
+	if (child == 0) {
+		dup2(read_fds[1], STDOUT_FILENO);
+
+		close(read_fds[0]);
+		close(read_fds[1]);
+		close(write_fds[0]);
+		close(write_fds[1]);
+		execlp(askpass, "lpass-askpass", prompt, NULL);
+		_exit(76);
+	}
+	close(read_fds[1]);
+	close(write_fds[0]);
+	close(write_fds[1]);
+
+	output = fdopen(read_fds[0], "r");
+	if (!output)
+		die_errno("fdopen");
+
+	if (getline(&password, &len, output) < 0) {
+		free(password);
+		die("Unable to retrieve password from askpass (no reply)");
+	}
+	lastlf = strrchr(password, '\n');
+	if (lastlf)
+		*lastlf = '\0';
+	waitpid(child, &status, 0);
+
+	if (WEXITSTATUS(status) == 76) {
+		die("Unable to execute askpass %s", askpass);
+	} else if (WEXITSTATUS(status)) {
+		die("There was an unspecified problem with askpass (%d)",
+		    WEXITSTATUS(status));
+	}
+	return password;
+}
 
 static char *password_prompt_fallback(const char *prompt, const char *error, const char *descfmt, va_list params)
 {
@@ -143,9 +227,18 @@ char *password_prompt(const char *prompt, const char *error, const char *descfmt
 	_cleanup_free_ char *prompt_colon = NULL;
 	_cleanup_free_ char *password = NULL;
 	char *password_fallback;
+	char *askpass;
 	char *ret;
 	va_list params;
 	int devnull;
+
+	askpass = getenv("LPASS_ASKPASS");
+	if (askpass) {
+		va_start(params, descfmt);
+		askpass = password_prompt_askpass(askpass, prompt, error, descfmt, params);
+		va_end(params);
+		return askpass;
+	}
 
 	password_fallback = getenv("LPASS_DISABLE_PINENTRY");
 	if (password_fallback && !strcmp(password_fallback, "1")) {

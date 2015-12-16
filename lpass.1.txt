@@ -21,16 +21,22 @@ DESCRIPTION
 several subcommands:
 
 [verse]
- lpass *login* [--trust] [--plaintext-key [--force, -f]] USERNAME
- lpass *logout* [--force, -f]
- lpass *show* [--sync=auto|now|no] [--clip, -c] [--all|--username|--password|--url|--notes|--field=FIELD|--id|--name] [--basic-regexp, -G|--fixed-strings, -F] {NAME|UNIQUEID}
- lpass *ls* [--sync=auto|now|no] [GROUP]
- lpass *edit* [--sync=auto|now|no] [--non-interactive] {--name|--username, -u|--password, -p|--url|--notes|--field=FIELD} {NAME|UNIQUEID}
- lpass *generate* [--sync=auto|now|no] [--clip, -c] [--username=USERNAME] [--url=URL] [--no-symbols] {NAME|UNIQUEID} LENGTH
- lpass *duplicate* [--sync=auto|now|no] {UNIQUENAME|UNIQUEID}
- lpass *rm* [--sync=auto|now|no] {UNIQUENAME|UNIQUEID}
- lpass *sync* [--background, -b]
- lpass *export* [--sync=auto|now|no]
+ lpass *login* [--trust] [--plaintext-key [--force, -f]] [--color=auto|never|always] USERNAME
+ lpass *logout* [--force, -f] [--color=auto|never|always]
+ lpass *show* [--sync=auto|now|no] [--clip, -c] [--all|--username|--password|--url|--notes|--field=FIELD|--id|--name] [--basic-regexp, -G|--fixed-strings, -F] [--color=auto|never|always] {NAME|UNIQUEID}
+ lpass *ls* [--sync=auto|now|no] [--long, -l] [-m] [-u] [--color=auto|never|always] [GROUP]
+ lpass *edit* [--sync=auto|now|no] [--non-interactive] {--name|--username, -u|--password, -p|--url|--notes|--field=FIELD} [--color=auto|never|always] {NAME|UNIQUEID}
+ lpass *generate* [--sync=auto|now|no] [--clip, -c] [--username=USERNAME] [--url=URL] [--no-symbols] [--color=auto|never|always] {NAME|UNIQUEID} LENGTH
+ lpass *duplicate* [--sync=auto|now|no] [--color=auto|never|always] {UNIQUENAME|UNIQUEID}
+ lpass *rm* [--sync=auto|now|no] [--color=auto|never|always] {UNIQUENAME|UNIQUEID}
+ lpass *sync* [--background, -b] [--color=auto|never|always]
+ lpass *export* [--sync=auto|now|no] [--color=auto|never|always]
+ lpass *share* *userls* SHARE
+ lpass *share* *useradd* [--read_only=[true|false]] [--hidden=[true|false]] [--admin=[true|false]] SHARE USERNAME
+ lpass *share* *usermod* [--read_only=[true|false]] [--hidden=[true|false]] [--admin=[true|false]] SHARE USERNAME
+ lpass *share* *userdel* SHARE USERNAME
+ lpass *share* *create* SHARE
+ lpass *share* *rm* SHARE
 
 Synchronization
 ~~~~~~~~~~~~~~~
@@ -70,6 +76,20 @@ passwords if it is installed. If unavailable, or if the 'LPASS_DISABLE_PINENTRY'
 environment variable is set to 1, passwords will be read from standard input and a
 prompt will be displayed on standard error.
 
+The program used for inputting passwords may also be configured by setting the
+'LPASS_ASKPASS` environment variable. 'LPASS_ASKPASS' is expected to be a
+binary that produces a prompt using its first command-line argument, and
+outputs the entered password to standard out.  ssh-askpass implements this
+protocol, as does the following shell script:
+
+[verse]
+ #!/bin/bash
+ echo -n "$*: " >/dev/stderr
+ stty -echo
+ read answer
+ stty echo
+ echo $answer
+
 Entry Specification
 ~~~~~~~~~~~~~~~~~~~
 Commands that take a 'UNIQUENAME' will fail if the provided name is used
@@ -99,7 +119,10 @@ Viewing
 ~~~~~~~
 The 'show' subcommand will display a password or selected field.
 
-The 'ls' subcommand will list names in groups in a tree structure.
+The 'ls' subcommand will list names in groups in a tree structure. If
+the '--long' or '-l' option is set, then also list the last modification
+time.  The '-u' option may be passed to show the last use (last touch) time
+instead, if available. Both times are in GMT.
 
 The 'export' subcommand will dump all account information including
 passwords to stdout (unencrypted).
@@ -120,11 +143,30 @@ generated password.
 The 'rm' command will remove the specified entry, and the 'duplicate' command
 will create a duplicate entry of the one specified, but with a different 'ID'.
 
+Shared Folder Commands
+~~~~~~~~~~~~~~~~~~~~~~
+The 'share' command and its accompanying subcommands can be used to manipulate
+shared folders, if available to the (enterprise or premium) user.  The
+'userls', 'useradd', 'usermod', and 'userdel' subcommands may be used to
+query and modify membership of the shared folder, while the 'create' and 'rm'
+share subcommands may be used to add new, or delete existing shared folders.
+The normal 'generate' and 'edit' commands may be used to edit accounts within
+the shared folder.
+
 Clipboard
 ~~~~~~~~~
 Commands that take a '-c' or '--clip' option will copy the output to the
 clipboard, using *xclip*(1) or *xsel*(1) on X11-based systems, *pbcopy*(1)
-on OSX, or *putclip* on Cygwin.
+on OSX, or *putclip* on Cygwin. The command to be used can be overridden by
+specifying the `LPASS_CLIPBOARD_COMMAND` environment variable.
+
+Color Output
+~~~~~~~~~~~~
+The '--color' option controls colored output to the terminal.  By default,
+commands will use '--color=auto', in which color output is used unless the
+output is not a tty (for example, when passed to a pipe or file).  If 'always'
+is used, colors are produced regardless of the output detection.  If 'never'
+is used, no color escape sequences are emitted.
 
 Configuration
 ~~~~~~~~~~~~~
@@ -147,3 +189,5 @@ in the section above:
 * 'LPASS_AGENT_TIMEOUT'
 * 'LPASS_AGENT_DISABLE'
 * 'LPASS_DISABLE_PINENTRY'
+* 'LPASS_ASKPASS'
+* 'LPASS_CLIPBOARD_COMMAND'

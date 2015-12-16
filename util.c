@@ -1,5 +1,37 @@
 /*
- * Copyright (c) 2014 LastPass.
+ * utility functions
+ *
+ * Copyright (C) 2014-2015 LastPass.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * In addition, as a special exception, the copyright holders give
+ * permission to link the code of portions of this program with the
+ * OpenSSL library under certain conditions as described in each
+ * individual source file, and distribute linked combinations
+ * including the two.
+ *
+ * You must obey the GNU General Public License in all respects
+ * for all of the code used other than OpenSSL.  If you modify
+ * file(s) with this exception, you may extend this exception to your
+ * version of the file(s), but you are not obligated to do so.  If you
+ * do not wish to do so, delete this exception statement from your
+ * version.  If you delete this exception statement from all source
+ * files in the program, then also delete it here.
+ *
+ * See LICENSE.OpenSSL for more details regarding this exception.
  *
  * reallocarray is:
  *     Copyright (c) 2008 Otto Moerbeek <otto@drijf.net>.
@@ -398,7 +430,7 @@ void *secure_resize(void *ptr, size_t oldlen, size_t newlen)
 }
 
 static char hex_digits[] = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f' };
-_unroll_ void bytes_to_hex(const char *bytes, char **hex, size_t len)
+_unroll_ void bytes_to_hex(const unsigned char *bytes, char **hex, size_t len)
 {
 	if (!*hex)
 		*hex = xmalloc(len * 2 + 1);
@@ -409,7 +441,7 @@ _unroll_ void bytes_to_hex(const char *bytes, char **hex, size_t len)
 	(*hex)[len * 2] = '\0';
 }
 
-int hex_to_bytes(const char *hex, char **bytes)
+int hex_to_bytes(const char *hex, unsigned char **bytes)
 {
 	size_t len = strlen(hex);
 	if (len % 2 != 0) {
@@ -446,4 +478,15 @@ unsigned long range_rand(unsigned long min, unsigned long max)
 	if (base_random < ULONG_MAX - remainder)
 		return min + base_random / bucket;
 	return range_rand(min, max);
+}
+
+void get_random_bytes(unsigned char *buf, size_t len)
+{
+	if (!RAND_bytes(buf, len))
+		die("Could not generate random bytes.");
+}
+
+const char *bool_str(bool val)
+{
+	return val ? "1" : "0";
 }

@@ -1,7 +1,38 @@
 /*
- * Copyright (c) 2014-2015 LastPass.
+ * encrypted vault parsing
+ *
+ * Copyright (C) 2014-2015 LastPass.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * In addition, as a special exception, the copyright holders give
+ * permission to link the code of portions of this program with the
+ * OpenSSL library under certain conditions as described in each
+ * individual source file, and distribute linked combinations
+ * including the two.
+ *
+ * You must obey the GNU General Public License in all respects
+ * for all of the code used other than OpenSSL.  If you modify
+ * file(s) with this exception, you may extend this exception to your
+ * version of the file(s), but you are not obligated to do so.  If you
+ * do not wish to do so, delete this exception statement from your
+ * version.  If you delete this exception statement from all source
+ * files in the program, then also delete it here.
+ *
+ * See LICENSE.OpenSSL for more details regarding this exception.
  */
-
 #include "blob.h"
 #include "config.h"
 #include "endpoints.h"
@@ -35,23 +66,11 @@ void share_free(struct share *share)
 {
 	if (!share)
 		return;
-	if (--share->refcount > 0)
-		return;
 
 	free(share->name);
 	free(share->id);
 	free(share->chunk);
 	free(share);
-}
-
-void share_assign(struct share *share, struct share **ptr)
-{
-	if (!share) {
-		*ptr = NULL;
-		return;
-	}
-	++share->refcount;
-	*ptr = share;
 }
 
 void field_free(struct field *field)
@@ -66,8 +85,16 @@ void field_free(struct field *field)
 	free(field);
 }
 
+struct account *new_account()
+{
+	struct account *account = new0(struct account, 1);
+	INIT_LIST_HEAD(&account->field_head);
+	return account;
+}
+
 void account_free(struct account *account)
 {
+	struct field *field, *tmp;
 	if (!account)
 		return;
 
@@ -84,11 +111,10 @@ void account_free(struct account *account)
 	free(account->username_encrypted);
 	free(account->password_encrypted);
 	free(account->note_encrypted);
-	for (struct field *field = account->field_head, *next_field = NULL; field; field = next_field) {
-		next_field = field->next;
+
+	list_for_each_entry_safe(field, tmp, &account->field_head, list) {
 		field_free(field);
 	}
-	share_free(account->share);
 	free(account);
 }
 
@@ -97,26 +123,31 @@ void blob_free(struct blob *blob)
 	if (!blob)
 		return;
 
-	for (struct account *account = blob->account_head, *next_account = NULL; account; account = next_account) {
-		next_account = account->next;
+	struct account *account, *tmp;
+	struct share *share, *tmp_share;
+
+	list_for_each_entry_safe(account, tmp, &blob->account_head, list)
 		account_free(account);
-	}
+
+	list_for_each_entry_safe(share, tmp_share, &blob->share_head, list)
+		share_free(share);
+
 	free(blob);
 }
 
 struct blob_pos {
-	const char *data;
+	const unsigned char *data;
 	size_t len;
 };
 
 struct chunk {
 	char name[4 + 1];
-	const char *data;
+	const unsigned char *data;
 	size_t len;
 };
 
 struct item {
-	const char *data;
+	const unsigned char *data;
 	size_t len;
 };
 
@@ -176,7 +207,7 @@ static char *read_hex_string(struct chunk *chunk)
 	if (item.len == 0)
 		return xstrdup("");
 
-	result = hex_to_bytes(item.data, &str);
+	result = hex_to_bytes((char *) item.data, (unsigned char **) &str);
 	if (result) {
 		free(str);
 		return NULL;
@@ -194,7 +225,7 @@ static char *read_plain_string(struct chunk *chunk)
 	if (item.len == 0)
 		return xstrdup("");
 
-	return xstrndup(item.data, item.len);
+	return xstrndup((char *) item.data, item.len);
 }
 
 static char *read_crypt_string(struct chunk *chunk, const unsigned char key[KDF_HASH_LEN], char **stored_base64)
@@ -205,7 +236,7 @@ static char *read_crypt_string(struct chunk *chunk, const unsigned char key[KDF_
 	if (!read_item(chunk, &item))
 		return NULL;
 	if (stored_base64)
-		*stored_base64 = cipher_base64(item.data, item.len);
+		*stored_base64 = cipher_base64((char *) item.data, item.len);
 
 	if (item.len == 0)
 		return xstrdup("");
@@ -262,7 +293,7 @@ static int read_boolean(struct chunk *chunk)
 
 static struct account *account_parse(struct chunk *chunk, const unsigned char key[KDF_HASH_LEN])
 {
-	struct account *parsed = new0(struct account, 1);
+	struct account *parsed = new_account();
 
 	entry_plain(id);
 	entry_crypt(name);
@@ -276,7 +307,7 @@ static struct account *account_parse(struct chunk *chunk, const unsigned char ke
 	entry_boolean(pwprotect);
 	skip(genpw);
 	skip(sn);
-	skip(last_touch);
+	entry_plain(last_touch);
 	skip(autologin);
 	skip(never_autofill);
 	skip(realm_data);
@@ -295,7 +326,7 @@ static struct account *account_parse(struct chunk *chunk, const unsigned char ke
 	skip(individualshare);
 	skip(notetype);
 	skip(noalert);
-	skip(last_modified_gmt);
+	entry_plain(last_modified_gmt);
 	skip(hasbeenshared);
 	skip(last_pwchange_gmt);
 	skip(created_gmt);
@@ -340,7 +371,7 @@ static struct share *share_parse(struct chunk *chunk, const struct private_key *
 {
 	struct share *parsed = new0(struct share, 1);
 	struct item item;
-	_cleanup_free_ char *ciphertext = NULL;
+	_cleanup_free_ unsigned char *ciphertext = NULL;
 	_cleanup_free_ char *hex_key = NULL;
 	_cleanup_free_ unsigned char *key = NULL;
 	_cleanup_free_ char *base64_name = NULL;
@@ -359,7 +390,7 @@ static struct share *share_parse(struct chunk *chunk, const struct private_key *
 
 	if (!read_item(chunk, &item) || item.len == 0 || item.len % 2 != 0)
 		goto error;
-	hex_to_bytes(item.data, &ciphertext);
+	hex_to_bytes((char *) item.data, &ciphertext);
 	hex_key = cipher_rsa_decrypt(ciphertext, item.len / 2, private_key);
 	if (!hex_key)
 		goto error;
@@ -369,7 +400,7 @@ static struct share *share_parse(struct chunk *chunk, const struct private_key *
 	len /= 2;
 	if (len != KDF_HASH_LEN)
 		goto error;
-	hex_to_bytes(hex_key, (char **)&key);
+	hex_to_bytes(hex_key, &key);
 	mlock(parsed->key, KDF_HASH_LEN);
 	memcpy(parsed->key, key, KDF_HASH_LEN);
 
@@ -393,61 +424,66 @@ error:
 #undef entry_crypt
 #undef skip
 
-struct blob *blob_parse(const char *blob, size_t len, const unsigned char key[KDF_HASH_LEN], const struct private_key *private_key)
+struct blob *blob_parse(const unsigned char *blob, size_t len, const unsigned char key[KDF_HASH_LEN], const struct private_key *private_key)
 {
 	struct blob_pos blob_pos = { .data = blob, .len = len };
 	struct chunk chunk;
-	struct account *account, **next_account;
-	struct field *field, **next_field = NULL;
-	struct share *last_share = NULL;
+	struct account *account = NULL;
+	struct field *field;
+	struct share *share, *last_share = NULL;
 	struct blob *parsed;
 	_cleanup_free_ char *versionstr = NULL;
 
 	parsed = new0(struct blob, 1);
 	parsed->local_version = false;
-	next_account = &parsed->account_head;
+	INIT_LIST_HEAD(&parsed->account_head);
+	INIT_LIST_HEAD(&parsed->share_head);
 
 	while (read_chunk(&blob_pos, &chunk)) {
 		if (!strcmp(chunk.name, "LPAV")) {
-			versionstr = xstrndup(chunk.data, chunk.len);
+			versionstr = xstrndup((char *) chunk.data, chunk.len);
 			parsed->version = strtoull(versionstr, NULL, 10);
 		} else if (!strcmp(chunk.name, "ACCT")) {
 			account = account_parse(&chunk, last_share ? last_share->key : key);
 			if (!account)
 				goto error;
-			share_assign(last_share, &account->share);
 
-			*next_account = account;
-			next_account = &account->next;
+			if (last_share) {
+				account->share = last_share;
+				char *tmp = account->fullname;
+				xasprintf(&account->fullname, "%s/%s",
+					  last_share->name, tmp);
+				free(tmp);
+			}
 
-			next_field = &account->field_head;
+			list_add(&account->list, &parsed->account_head);
+
 		} else if (!strcmp(chunk.name, "ACFL") || !strcmp(chunk.name, "ACOF")) {
-			if (!next_field)
+			if (!account)
 				goto error;
 
 			field = field_parse(&chunk, last_share ? last_share->key : key);
 			if (!field)
 				goto error;
 
-			*next_field = field;
-			next_field = &field->next;
+			list_add_tail(&field->list, &account->field_head);
 		} else if (!strcmp(chunk.name, "LOCL"))
 			parsed->local_version = true;
 		else if (!strcmp(chunk.name, "SHAR")) {
-			share_free(last_share);
-			share_assign(share_parse(&chunk, private_key), &last_share);
+			share = share_parse(&chunk, private_key);
+			last_share = share;
+			if (share)
+				list_add_tail(&share->list, &parsed->share_head);
 		}
 	}
 
 	if (!versionstr)
 		goto error;
-	if (!parsed->account_head)
+	if (list_empty(&parsed->account_head))
 		goto error;
-	share_free(last_share);
 	return parsed;
 
 error:
-	share_free(last_share);
 	blob_free(parsed);
 	return NULL;
 }
@@ -482,7 +518,7 @@ static void write_plain_string(struct buffer *buffer, char *bytes)
 static void write_hex_string(struct buffer *buffer, char *bytes)
 {
 	_cleanup_free_ char *hex = NULL;
-	bytes_to_hex(bytes, &hex, strlen(bytes));
+	bytes_to_hex((unsigned char *) bytes, &hex, strlen(bytes));
 	write_plain_string(buffer, hex);
 }
 static void write_crypt_string(struct buffer *buffer, char *bytes, const unsigned char key[KDF_HASH_LEN])
@@ -512,6 +548,7 @@ static void write_chunk(struct buffer *dstbuffer, struct buffer *srcbuffer, char
 static void write_account_chunk(struct buffer *buffer, struct account *account, const unsigned char key[KDF_HASH_LEN])
 {
 	struct buffer accbuf, fieldbuf;
+	struct field *field;
 
 	memset(&accbuf, 0, sizeof(accbuf));
 	write_plain_string(&accbuf, account->id);
@@ -552,7 +589,7 @@ static void write_account_chunk(struct buffer *buffer, struct account *account, 
 	write_plain_string(&accbuf, "skipped");
 	write_chunk(buffer, &accbuf, "ACCT");
 	free(accbuf.bytes);
-	for (struct field *field = account->field_head; field; field = field->next) {
+	list_for_each_entry(field, &account->field_head, list) {
 		memset(&fieldbuf, 0, sizeof(fieldbuf));
 		write_plain_string(&fieldbuf, field->name);
 		write_plain_string(&fieldbuf, field->type);
@@ -575,21 +612,21 @@ size_t blob_write(const struct blob *blob, const unsigned char key[KDF_HASH_LEN]
 {
 	struct buffer buffer;
 	struct share *last_share = NULL;
-	_cleanup_free_ char *version;
+	struct account *account;
 
 	memset(&buffer, 0, sizeof(buffer));
 
-	version = xultostr(blob->version);
+	_cleanup_free_ char *version = xultostr(blob->version);
 	buffer_append(&buffer, "LPAV", 4);
 	write_plain_string(&buffer, version);
 	buffer_append(&buffer, "LOCL", 4);
 	write_plain_string(&buffer, LASTPASS_CLI_VERSION);
 
-	for (struct account *account = blob->account_head; account; account = account->next) {
+	list_for_each_entry(account, &blob->account_head, list) {
 		if (!account->share)
 			write_account_chunk(&buffer, account, key);
 	}
-	for (struct account *account = blob->account_head; account; account = account->next) {
+	list_for_each_entry(account, &blob->account_head, list) {
 		if (!account->share)
 			continue;
 		if (last_share != account->share) {
@@ -605,7 +642,7 @@ size_t blob_write(const struct blob *blob, const unsigned char key[KDF_HASH_LEN]
 
 static struct blob *local_blob(const unsigned char key[KDF_HASH_LEN], const struct private_key *private_key)
 {
-	_cleanup_free_ char *blob = NULL;
+	_cleanup_free_ unsigned char *blob = NULL;
 	size_t len = config_read_encrypted_buffer("blob", &blob, key);
 	if (!blob)
 		return NULL;
@@ -673,20 +710,6 @@ void blob_save(const struct blob *blob, const unsigned char key[KDF_HASH_LEN])
 	config_write_encrypted_buffer("blob", bluffer, len, key);
 }
 
-static char *encrypt_and_base64(const char *str, unsigned const char key[KDF_HASH_LEN])
-{
-	char *intermediate = NULL;
-	char *base64 = NULL;
-	size_t len;
-
-	base64 = trim(xstrdup(str));
-	len = cipher_aes_encrypt(base64, key, &intermediate);
-	free(base64);
-	base64 = cipher_base64(intermediate, len);
-	free(intermediate);
-	return base64;
-}
-
 #define set_field(obj, field) do { \
 	free(obj->field); \
 	obj->field = field; \
@@ -724,8 +747,23 @@ void field_set_value(struct account *account, struct field *field, char *value, 
 	else
 		set_field(field, value);
 }
+
+static bool is_shared_folder_name(const char *fullname)
+{
+	return !strncmp(fullname, "Shared-", 7);
+}
+
 void account_set_fullname(struct account *account, char *fullname, unsigned const char key[KDF_HASH_LEN])
 {
+	if (account->share && is_shared_folder_name(fullname)) {
+		char *groupname = strchr(fullname, '/');
+		if (groupname) {
+			char *tmp = fullname;
+			fullname = xstrdup(groupname + 1);
+			free(tmp);
+		}
+	}
+
 	char *slash = strrchr(fullname, '/');
 	if (!slash) {
 		account_set_name(account, xstrdup(fullname), key);
@@ -736,6 +774,47 @@ void account_set_fullname(struct account *account, char *fullname, unsigned cons
 	}
 	free(account->fullname);
 	account->fullname = fullname;
+}
+
+struct share *find_unique_share(struct blob *blob, const char *name)
+{
+       struct share *share;
+
+       list_for_each_entry(share, &blob->share_head, list) {
+               if (!strcasecmp(share->name, name)) {
+                       return share;
+               }
+       }
+       return NULL;
+}
+
+/*
+ * Assign an account to the proper shared folder, if any.
+ *
+ * This function may exit if the name represents a shared folder but
+ * same folder is not available.
+ */
+void account_assign_share(struct blob *blob, struct account *account, const char *name)
+{
+	struct share *share;
+	_cleanup_free_ char *shared_name = NULL;
+
+	if (!is_shared_folder_name(name))
+		return;
+
+	/* strip off shared groupname */
+	char *slash = strchr(name, '/');
+	if (!slash)
+		die("Shared folder name has improper format");
+
+	shared_name = xstrndup(name, slash - name);
+
+	/* find a share matching group name */
+	share = find_unique_share(blob, shared_name);
+	if (!share)
+		die("Unable to find shared folder for %s in blob\n", name);
+
+	account->share = share;
 }
 
 struct account *notes_expand(struct account *acc)
@@ -749,14 +828,14 @@ struct account *notes_expand(struct account *acc)
 	if (strcmp(acc->url, "http://sn"))
 		return NULL;
 
-	expand = new0(struct account, 1);
+	expand = new_account();
 
 	expand->id = xstrdup(acc->id);
 	expand->pwprotect = acc->pwprotect;
 	expand->name = xstrdup(acc->name);
 	expand->group = xstrdup(acc->group);
 	expand->fullname = xstrdup(acc->fullname);
-	share_assign(acc->share, &expand->share);
+	expand->share = acc->share;
 
 	if (strncmp(acc->note, "NoteType:", 9))
 		return NULL;
@@ -791,8 +870,7 @@ struct account *notes_expand(struct account *acc)
 			field->type = xstrdup("text");
 			field->name = xstrdup(name);
 			field->value = xstrdup(value);
-			field->next = expand->field_head;
-			expand->field_head = field;
+			list_add(&field->list, &expand->field_head);
 		}
 skip:
 		free(line);
@@ -803,7 +881,7 @@ skip:
 		if (!*start)
 			break;
 	}
-	if (!expand->note && !expand->username && !expand->url && !expand->password && !expand->field_head)
+	if (!expand->note && !expand->username && !expand->url && !expand->password && list_empty(&expand->field_head))
 		expand->note = xstrdup(acc->note);
 	else if (!expand->note)
 		expand->note = xstrdup("");
@@ -819,8 +897,9 @@ skip:
 struct account *notes_collapse(struct account *acc)
 {
 	struct account *collapse;
+	struct field *field;
 
-	collapse = new0(struct account, 1);
+	collapse = new_account();
 
 	collapse->id = xstrdup(acc->id);
 	collapse->pwprotect = acc->pwprotect;
@@ -831,9 +910,9 @@ struct account *notes_collapse(struct account *acc)
 	collapse->username = xstrdup("");
 	collapse->password = xstrdup("");
 	collapse->note = xstrdup("");
-	share_assign(acc->share, &collapse->share);
+	collapse->share = acc->share;
 
-	for (struct field *field = acc->field_head; field; field = field->next) {
+	list_for_each_entry(field, &acc->field_head, list) {
 		trim(field->value);
 		trim(field->name);
 		if (!strcmp(field->name, "NoteType"))
