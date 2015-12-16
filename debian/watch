@@ -1,0 +1,3 @@
+version=3
+opts=filenamemangle=s/.+\/v?(\d\S*)\.tar\.gz/lastpass-cli-$1\.tar\.gz/ \
+  https://github.com/lastpass/lastpass-cli/tags .*/v?(\d\S*)\.tar\.gz
